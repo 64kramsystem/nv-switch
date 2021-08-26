@@ -28,7 +28,13 @@ c_polling_interval=5               # Seconds between pollings
 c_program_name=$(basename "$0")    # Also used as service name
 c_help="Usage: $c_program_name [-h|--help] [-d|--debug] [-s|--sleep SECS] $(IFS=\|; echo "${c_commands[*]}")
 
-The '--sleep' option makes the program pause before and after running the 'nvidia' switch; typically used by the installed unit."
+The '--sleep' option makes the program pause before and after running the 'nvidia' switch; typically used by the installed unit.
+
+COMMANDS:
+
+- 'nvidia'  : switch the drivers to nvidia
+- 'vfio'    : switch the drivers to vfio
+- 'list'    : list the drives in use by the second GPUS, and the process running on it"
 
 v_mode=  # on/off/list
 v_sleep=
