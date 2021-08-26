@@ -25,16 +25,20 @@ c_target_power_draw=15             # Around 11 is optimal, but avoid trying hard
 c_persistenced_restart_interval=25 # Typically takes between 15 and 20"; 25 are enough to draw the conclusion
 c_attempts=4                       # Includes the first; a couple are generally required
 c_polling_interval=5               # Seconds between pollings
+c_default_sleep=5                  # Used by the service
 c_program_name=$(basename "$0")    # Also used as service name
 c_help="Usage: $c_program_name [-h|--help] [-d|--debug] [-s|--sleep SECS] $(IFS=\|; echo "${c_commands[*]}")
 
-The '--sleep' option makes the program pause before and after running the 'nvidia' switch; typically used by the installed unit.
+The '--sleep' option makes the program pause before and after running the 'nvidia' switch.
 
-COMMANDS:
+COMMANDS (with command-specific options):
 
 - 'nvidia'  : switch the drivers to nvidia
+  - accepts '--sleep', but makes sense only in the context of a running Systemd unit
 - 'vfio'    : switch the drivers to vfio
-- 'list'    : list the drives in use by the second GPUS, and the process running on it"
+- 'list'    : list the drives in use by the second GPUS, and the process running on it
+- 'install' : install the Systemd unit
+  - if '--sleep' is not specified, the value is set to $c_default_sleep."
 
 v_mode=  # on/off/list
 v_sleep=
@@ -166,6 +170,36 @@ function list {
   lsof /dev/nvidia? 2> /dev/null | tail -n+2 | awk '{print $NF,$0}' | sort | cut -f2- -d' '
 }
 
+function install {
+  # `sleep` can be used as name, but best to avoid shadowing.
+  #
+  local l_sleep=${v_sleep:-$c_default_sleep}
+
+  # For simplicity, a few assumptions are applied (standard home, no need to quote, ...).
+  #
+  SYSTEMD_EDITOR="tee" systemctl edit --force --full "$c_program_name" << UNIT
+[Unit]
+Description=Switch GPU1 driver to nvidia
+After=lightdm.target
+
+[Service]
+Type=oneshot
+# We need to wait a bit after start, otherwise, X hangs
+ExecStart=$0 nvidia -s $l_sleep
+
+StandardOutput=syslog
+StandardError=syslog
+
+Environment="DISPLAY=:0" "XAUTHORITY=/home/$SUDO_USER/.Xauthority"
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  systemctl enable "$c_program_name"
+
+  echo "Service installed and enabled, with a sleep time of $l_sleep"
+}
+
 ################################################################################
 # MAIN STAGES
 ################################################################################
@@ -221,6 +255,9 @@ function main {
     ;;
   list)
     list
+    ;;
+  install)
+    install
     ;;
   *)
     >&2 echo "Invalid command: $v_mode; see help."
