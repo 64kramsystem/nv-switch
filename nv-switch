@@ -72,19 +72,6 @@ function target_reached {
   [[ $t_pstate == "$c_target_pstate" && $t_power_draw -le "$c_target_power_draw" ]]
 }
 
-# The processlist is very important! See permissions not in switch_nvidia().
-#
-function list {
-  local pattern=${c_gpu_bus_id%?}
-  pattern=${pattern:5}
-
-  lspci -v | grep -P '^\w\w:\w\w|in use' | perl -ne "if (/^$pattern/) { print; print scalar(readline) }"
-
-  echo
-
-  lsof /dev/nvidia? 2> /dev/null | tail -n+2 | awk '{print $NF,$0}' | sort | cut -f2- -d' '
-}
-
 ################################################################################
 # SWITCHERS
 ################################################################################
@@ -152,6 +139,23 @@ function switch_vfio {
   # This has no access at this stage to the vfio card, so no need to set the permissions.
 
   systemctl start nvidia-persistenced
+}
+
+################################################################################
+# OTHER ACTIONS
+################################################################################
+
+# The processlist is very important! See permissions not in switch_nvidia().
+#
+function list {
+  local pattern=${c_gpu_bus_id%?}
+  pattern=${pattern:5}
+
+  lspci -v | grep -P '^\w\w:\w\w|in use' | perl -ne "if (/^$pattern/) { print; print scalar(readline) }"
+
+  echo
+
+  lsof /dev/nvidia? 2> /dev/null | tail -n+2 | awk '{print $NF,$0}' | sort | cut -f2- -d' '
 }
 
 ################################################################################
