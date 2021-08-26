@@ -24,7 +24,8 @@ c_target_power_draw=15             # Around 11 is optimal, but avoid trying hard
 c_persistenced_restart_interval=25 # Typically takes between 15 and 20"; 25 are enough to draw the conclusion
 c_attempts=4                       # Includes the first; a couple are generally required
 c_polling_interval=5               # Seconds between pollings
-c_help="Usage: $(basename "$0") [-h|--help] [-d|--debug] [-s|--sleep SECS] (nvidia|vfio|list)
+c_program_name=$(basename "$0")    # Also used as service name
+c_help="Usage: $c_program_name [-h|--help] [-d|--debug] [-s|--sleep SECS] (nvidia|vfio|list)
 
 Sleep waits at the beginning and end; required when running as unit."
 
