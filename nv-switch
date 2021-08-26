@@ -28,7 +28,7 @@ c_polling_interval=5               # Seconds between pollings
 c_program_name=$(basename "$0")    # Also used as service name
 c_help="Usage: $c_program_name [-h|--help] [-d|--debug] [-s|--sleep SECS] $(IFS=\|; echo "${c_commands[*]}")
 
-Sleep waits at the beginning and end; required when running as unit."
+The '--sleep' option makes the program pause before and after running the 'nvidia' switch; typically used by the installed unit."
 
 v_mode=  # on/off/list
 v_sleep=
@@ -204,13 +204,11 @@ function switch_to_root {
 }
 
 function main {
-  if [[ -n $v_sleep ]]; then
-    sleep "$v_sleep"
-  fi
-
   case $v_mode in
   nvidia)
+    [[ -n $v_sleep ]] && sleep "$v_sleep"
     switch_nvidia
+    [[ -n $v_sleep ]] && sleep "$v_sleep"
     ;;
   vfio)
     switch_vfio
@@ -222,10 +220,6 @@ function main {
     >&2 echo "Invalid command: $v_mode; see help."
     exit 1
   esac
-
-  if [[ -n $v_sleep ]]; then
-    sleep "$v_sleep"
-  fi
 }
 
 decode_cmdline_args "$@"
