@@ -7,6 +7,8 @@ set -o errtrace
 shopt -s inherit_errexit
 
 c_commands=(nvidia vfio list)
+c_host_gpu_device=/dev/nvidia0
+c_guest_gpu_device=/dev/nvidia1
 c_gpu_bus_id="0000:2b:00.0"
 # Components and drivers for an RTX 2070 Super
 #
@@ -51,6 +53,12 @@ t_power_draw= # int
 # HELPERS
 ################################################################################
 
+function list_gpu_device_processes {
+  local device=$1
+
+  lsof "$device" 2> /dev/null | tail -n+2
+}
+
 function switch_driver {
   local bus_id=$1
   local new_driver=$2
@@ -65,7 +73,7 @@ function switch_driver {
 function set_dev_permissions {
   local permissions=$1
 
-  chmod "$permissions" /dev/nvidia1
+  chmod "$permissions" "$c_guest_gpu_device"
 }
 
 function set_card_data {
@@ -167,7 +175,10 @@ function list {
 
   echo
 
-  lsof /dev/nvidia? 2> /dev/null | tail -n+2 | awk '{print $NF,$0}' | sort | cut -f2- -d' '
+  (
+    list_gpu_device_processes "$c_host_gpu_device"
+    list_gpu_device_processes "$c_guest_gpu_device"
+  ) | awk '{print $NF,$0}' | sort | cut -f2- -d' '
 }
 
 function install {
