@@ -6,6 +6,7 @@ set -o nounset
 set -o errtrace
 shopt -s inherit_errexit
 
+c_commands=(nvidia vfio list)
 c_gpu_bus_id="0000:2b:00.0"
 # Components and drivers for an RTX 2070 Super
 #
@@ -24,9 +25,20 @@ c_target_power_draw=15             # Around 11 is optimal, but avoid trying hard
 c_persistenced_restart_interval=25 # Typically takes between 15 and 20"; 25 are enough to draw the conclusion
 c_attempts=4                       # Includes the first; a couple are generally required
 c_polling_interval=5               # Seconds between pollings
-c_help="Usage: $(basename "$0") [-h|--help] [-d|--debug] [-s|--sleep SECS] (nvidia|vfio|list)
+c_default_sleep=5                  # Used by the service
+c_program_name=$(basename "$0")    # Also used as service name
+c_help="Usage: $c_program_name [-h|--help] [-d|--debug] [-s|--sleep SECS] $(IFS=\|; echo "${c_commands[*]}")
 
-Sleep waits at the beginning and end; required when running as unit."
+The '--sleep' option makes the program pause before and after running the 'nvidia' switch.
+
+COMMANDS (with command-specific options):
+
+- 'nvidia'  : switch the drivers to nvidia
+  - accepts '--sleep', but makes sense only in the context of a running Systemd unit
+- 'vfio'    : switch the drivers to vfio
+- 'list'    : list the drives in use by the second GPUS, and the process running on it
+- 'install' : install the Systemd unit
+  - if '--sleep' is not specified, the value is set to $c_default_sleep."
 
 v_mode=  # on/off/list
 v_sleep=
@@ -70,19 +82,6 @@ function set_card_data {
 
 function target_reached {
   [[ $t_pstate == "$c_target_pstate" && $t_power_draw -le "$c_target_power_draw" ]]
-}
-
-# The processlist is very important! See permissions not in switch_nvidia().
-#
-function list {
-  local pattern=${c_gpu_bus_id%?}
-  pattern=${pattern:5}
-
-  lspci -v | grep -P '^\w\w:\w\w|in use' | perl -ne "if (/^$pattern/) { print; print scalar(readline) }"
-
-  echo
-
-  lsof /dev/nvidia? 2> /dev/null | tail -n+2 | awk '{print $NF,$0}' | sort | cut -f2- -d' '
 }
 
 ################################################################################
@@ -155,6 +154,53 @@ function switch_vfio {
 }
 
 ################################################################################
+# OTHER ACTIONS
+################################################################################
+
+# The processlist is very important! See permissions not in switch_nvidia().
+#
+function list {
+  local pattern=${c_gpu_bus_id%?}
+  pattern=${pattern:5}
+
+  lspci -v | grep -P '^\w\w:\w\w|in use' | perl -ne "if (/^$pattern/) { print; print scalar(readline) }"
+
+  echo
+
+  lsof /dev/nvidia? 2> /dev/null | tail -n+2 | awk '{print $NF,$0}' | sort | cut -f2- -d' '
+}
+
+function install {
+  # `sleep` can be used as name, but best to avoid shadowing.
+  #
+  local l_sleep=${v_sleep:-$c_default_sleep}
+
+  # For simplicity, a few assumptions are applied (standard home, no need to quote, ...).
+  #
+  SYSTEMD_EDITOR="tee" systemctl edit --force --full "$c_program_name" << UNIT
+[Unit]
+Description=Switch GPU1 driver to nvidia
+After=lightdm.target
+
+[Service]
+Type=oneshot
+# We need to wait a bit after start, otherwise, X hangs
+ExecStart=$0 nvidia -s $l_sleep
+
+StandardOutput=syslog
+StandardError=syslog
+
+Environment="DISPLAY=:0" "XAUTHORITY=/home/$SUDO_USER/.Xauthority"
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  systemctl enable "$c_program_name"
+
+  echo "Service installed and enabled, with a sleep time of $l_sleep"
+}
+
+################################################################################
 # MAIN STAGES
 ################################################################################
 
@@ -198,13 +244,11 @@ function switch_to_root {
 }
 
 function main {
-  if [[ -n $v_sleep ]]; then
-    sleep "$v_sleep"
-  fi
-
   case $v_mode in
   nvidia)
+    [[ -n $v_sleep ]] && sleep "$v_sleep"
     switch_nvidia
+    [[ -n $v_sleep ]] && sleep "$v_sleep"
     ;;
   vfio)
     switch_vfio
@@ -212,14 +256,13 @@ function main {
   list)
     list
     ;;
+  install)
+    install
+    ;;
   *)
-    >&2 echo 'The only valid params are `nvidia`, `vfio` and `list`.'
+    >&2 echo "Invalid command: $v_mode; see help."
     exit 1
   esac
-
-  if [[ -n $v_sleep ]]; then
-    sleep "$v_sleep"
-  fi
 }
 
 decode_cmdline_args "$@"
