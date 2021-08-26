@@ -7,6 +7,8 @@ set -o errtrace
 shopt -s inherit_errexit
 
 c_commands=(nvidia vfio list)
+c_host_gpu_device=/dev/nvidia0
+c_guest_gpu_device=/dev/nvidia1
 c_gpu_bus_id="0000:2b:00.0"
 # Components and drivers for an RTX 2070 Super
 #
@@ -51,6 +53,12 @@ t_power_draw= # int
 # HELPERS
 ################################################################################
 
+function list_gpu_device_processes {
+  local device=$1
+
+  lsof "$device" 2> /dev/null | tail -n+2
+}
+
 function switch_driver {
   local bus_id=$1
   local new_driver=$2
@@ -65,7 +73,7 @@ function switch_driver {
 function set_dev_permissions {
   local permissions=$1
 
-  chmod "$permissions" /dev/nvidia1
+  chmod "$permissions" "$c_guest_gpu_device"
 }
 
 function set_card_data {
@@ -142,6 +150,18 @@ function switch_nvidia {
 # For a more sophisticated approach (using the same strategy), see https://raw.githubusercontent.com/andre-richter/vfio-pci-bind/master/vfio-pci-bind.sh.
 #
 function switch_vfio {
+  local guest_gpu_processes
+  guest_gpu_processes=$(list_gpu_device_processes "$c_guest_gpu_device" | grep -v nvidia-persistenced || true)
+
+  # This can actually happen if the nvidia driver if one restarts X. In order to avoid that, a switch
+  # to vfio service should be run on lightdm shutdown.
+  #
+  if [[ -n $guest_gpu_processes ]]; then
+    echo "$guest_gpu_processes"
+    >&2 echo "Found processes (other than persistenced) running on the guest device!"
+    exit 1
+  fi
+
   systemctl stop nvidia-persistenced
 
   for device in "${!c_gpu_device_drivers[@]}"; do
@@ -167,9 +187,14 @@ function list {
 
   echo
 
-  lsof /dev/nvidia? 2> /dev/null | tail -n+2 | awk '{print $NF,$0}' | sort | cut -f2- -d' '
+  (
+    list_gpu_device_processes "$c_host_gpu_device"
+    list_gpu_device_processes "$c_guest_gpu_device"
+  ) | awk '{print $NF,$0}' | sort | cut -f2- -d' '
 }
 
+# See note on switch_vfio() about lightdm restart side effect.
+#
 function install {
   # `sleep` can be used as name, but best to avoid shadowing.
   #
