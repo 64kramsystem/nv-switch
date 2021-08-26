@@ -150,6 +150,18 @@ function switch_nvidia {
 # For a more sophisticated approach (using the same strategy), see https://raw.githubusercontent.com/andre-richter/vfio-pci-bind/master/vfio-pci-bind.sh.
 #
 function switch_vfio {
+  local guest_gpu_processes
+  guest_gpu_processes=$(list_gpu_device_processes "$c_guest_gpu_device" | grep -v nvidia-persistenced)
+
+  # This can actually happen if the nvidia driver if one restarts X. In order to avoid that, a switch
+  # to vfio service should be run on lightdm shutdown.
+  #
+  if [[ -n $guest_gpu_processes ]]; then
+    echo "$guest_gpu_processes"
+    >&2 echo "Found processes (other than persistenced) running on the guest device!"
+    exit 1
+  fi
+
   systemctl stop nvidia-persistenced
 
   for device in "${!c_gpu_device_drivers[@]}"; do
@@ -181,6 +193,8 @@ function list {
   ) | awk '{print $NF,$0}' | sort | cut -f2- -d' '
 }
 
+# See note on switch_vfio() about lightdm restart side effect.
+#
 function install {
   # `sleep` can be used as name, but best to avoid shadowing.
   #
