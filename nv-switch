@@ -76,6 +76,15 @@ function switch_driver {
     # Without override, an odd error can be raised ("No such device").
     #
     echo "$new_driver" > /sys/bus/pci/devices/"$bus_id"/driver_override
+
+    # There are (at least) two ways of binding a driver to a device, by sending the device bus id:
+    #
+    # 1. to the `$driver_name/bind` file
+    # 2. to `/sys/bus/pci/drivers_probe`
+    #
+    # The first is used here; the second is used by the `vfio-pci-bind.sh` script mentioned below.
+    # An explanation of probing can be found [here](https://stackoverflow.com/a/5069325).
+    #
     echo "$bus_id" > /sys/bus/pci/drivers/"$new_driver"/bind
   fi
 }
