@@ -63,16 +63,21 @@ function switch_driver {
   local bus_id=$1
   local new_driver=$2
 
-  # If the device has no driver, there's nothing to unbind.
-  #
-  if [[ -f /sys/bus/pci/devices/"$bus_id"/driver ]]; then
-    echo "$bus_id" > /sys/bus/pci/devices/"$bus_id"/driver/unbind
-  fi
+  # shellcheck disable=2155 # statement always successful
+  local old_driver=$(basename "$(readlink /sys/bus/pci/devices/"$bus_id"/driver || true)")
 
-  # Without override, an odd error can be raised ("No such device").
-  #
-  echo "$new_driver" > /sys/bus/pci/devices/"$bus_id"/driver_override
-  echo "$bus_id" > /sys/bus/pci/drivers/"$new_driver"/bind
+  if [[ $old_driver != "$new_driver" ]]; then
+    # If the device has no driver, there's nothing to unbind.
+    #
+    if [[ -n $old_driver ]]; then
+      echo "$bus_id" > /sys/bus/pci/devices/"$bus_id"/driver/unbind
+    fi
+
+    # Without override, an odd error can be raised ("No such device").
+    #
+    echo "$new_driver" > /sys/bus/pci/devices/"$bus_id"/driver_override
+    echo "$bus_id" > /sys/bus/pci/drivers/"$new_driver"/bind
+  fi
 }
 
 function set_dev_permissions {
