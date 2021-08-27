@@ -63,9 +63,14 @@ function switch_driver {
   local bus_id=$1
   local new_driver=$2
 
+  # If the device has no driver, there's nothing to unbind.
+  #
+  if [[ -f /sys/bus/pci/devices/"$bus_id"/driver ]]; then
+    echo "$bus_id" > /sys/bus/pci/devices/"$bus_id"/driver/unbind
+  fi
+
   # Without override, an odd error can be raised ("No such device").
   #
-  echo "$bus_id" > /sys/bus/pci/devices/"$bus_id"/driver/unbind
   echo "$new_driver" > /sys/bus/pci/devices/"$bus_id"/driver_override
   echo "$bus_id" > /sys/bus/pci/drivers/"$new_driver"/bind
 }
