@@ -168,6 +168,8 @@ function target_reached {
 ################################################################################
 
 function switch_nvidia {
+  [[ -n $v_sleep ]] && sleep "$v_sleep"
+
   for (( i = 0; i < ${#c_gpu_device_drivers_rtx_2070_super[@]}; i++ )); do
     local bus_id=$v_guest_gpu_bus_id.$i
     local driver=${c_gpu_device_drivers_rtx_2070_super[$i]}
@@ -218,6 +220,8 @@ function switch_nvidia {
   message="Couldn't reach target state after $c_attempts attempts ($t_pstate/$t_power_draw)."
   >&2 echo "$message"
   notify-send "$message"
+
+  [[ -n $v_sleep ]] && sleep "$v_sleep"
 }
 
 # For a more sophisticated approach (using the same strategy), see https://raw.githubusercontent.com/andre-richter/vfio-pci-bind/master/vfio-pci-bind.sh.
@@ -296,9 +300,7 @@ function main {
   #
   case $v_mode in
   nvidia)
-    [[ -n $v_sleep ]] && sleep "$v_sleep"
     switch_nvidia
-    [[ -n $v_sleep ]] && sleep "$v_sleep"
     ;;
   vfio)
     switch_vfio
