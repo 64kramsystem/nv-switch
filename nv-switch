@@ -7,7 +7,6 @@ set -o errtrace
 shopt -s inherit_errexit
 
 c_commands=(nvidia vfio list)
-c_gpu_bus_id="0000:2b:00.0"
 c_gpu_device_drivers_rtx_2070_super=(nvidia snd_hda_intel xhci_hcd nvidia-gpu)
 # The pstate only is not sufficient, as in some cases, the temperature doesn't reach acceptable values
 # (eg. stays at 20W); it's currently not clear if in those cases, one should just wait more (e.g. 1
@@ -20,12 +19,13 @@ c_attempts=4                       # Includes the first; a couple are generally 
 c_polling_interval=5               # Seconds between pollings
 c_default_sleep=5                  # Used by the service
 c_program_name=$(basename "$0")    # Also used as service name
-c_help="Usage: $c_program_name [-h|--help] [-s|--sleep SECS] [-d|--guest-gpu-device] $(IFS=\|; echo "${c_commands[*]}")
+c_help="Usage: $c_program_name [-h|--help] [-s|--sleep SECS] [-d|--guest-gpu-device] [-b|--guest-gpu-bus-id] $(IFS=\|; echo "${c_commands[*]}")
 
 Options:
 
 - '--sleep'            : make the program pause before and after running the 'nvidia' switch
 - '--guest-gpu-device' : block device, for example '/dev/nvidia1' or '/dev/dri/card0'
+- '--guest-gpu-bus-id' : bus (function is optional), for example '0000:2b:00' or '0000:2b:00.0'
 
 Commands help follows.
 
@@ -33,7 +33,7 @@ Commands help follows.
 
 Switch the card drivers to nvidia.
 
-Requires '--guest-gpu-device'.
+Requires '--guest-gpu-device' and '--guest-gpu-bus-id'.
 
 Accepts '--sleep', but makes sense only in the context of a running Systemd unit.
 
@@ -41,19 +41,19 @@ Accepts '--sleep', but makes sense only in the context of a running Systemd unit
 
 Switch the card drivers to vfio.
 
-Requires '--guest-gpu-device'.
+Requires '--guest-gpu-device' and '--guest-gpu-bus-id'.
 
 ## list
 
 List the drives in use by the second card, and the processes running on it.
 
-Requires '--guest-gpu-device'.
+Requires '--guest-gpu-device' and '--guest-gpu-bus-id'.
 
 ## install
 
 Install the Systemd unit to run this program after X starts.
 
-Requires '--guest-gpu-device'.
+Requires '--guest-gpu-device' and '--guest-gpu-bus-id'.
 
 If '--sleep' is not specified, the value is set to $c_default_sleep."
 
@@ -61,6 +61,7 @@ v_mode=                # on/off/list
 v_sleep=
 v_debug=               # boolean; blank=false, anything else=true
 v_guest_gpu_device=    # block device, e.g. /dev/nvidia1
+v_guest_gpu_bus_id=    # bus without function, e.g. '0000:2b:00'
 
 t_pstate=
 t_power_draw=          # int
@@ -133,7 +134,7 @@ function target_reached {
 
 function switch_nvidia {
   for (( i = 0; i < ${#c_gpu_device_drivers_rtx_2070_super[@]}; i++ )); do
-    local bus_id=${c_gpu_bus_id%?}.$i
+    local bus_id=$v_guest_gpu_bus_id.$i
     local driver=${c_gpu_device_drivers_rtx_2070_super[$i]}
 
     switch_driver "$bus_id" "$driver"
@@ -201,7 +202,7 @@ function switch_vfio {
   systemctl stop nvidia-persistenced
 
   for (( i = 0; i < ${#c_gpu_device_drivers_rtx_2070_super[@]}; i++ )); do
-    local bus_id=${c_gpu_bus_id%?}.$i
+    local bus_id=$v_guest_gpu_bus_id.$i
     switch_driver "$bus_id" vfio-pci
   done
 
@@ -213,8 +214,7 @@ function switch_vfio {
 # The processlist is very important! See permissions not in switch_nvidia().
 #
 function list {
-  local pattern=${c_gpu_bus_id%?}
-  pattern=${pattern:5}
+  local pattern=${v_guest_gpu_bus_id:5}
 
   lspci -v | grep -P '^\w\w:\w\w|in use' | perl -ne "if (/^$pattern/) { print; print scalar(readline) }"
 
@@ -236,7 +236,7 @@ After=lightdm.target
 [Service]
 Type=oneshot
 # We need to wait a bit after start, otherwise, X hangs
-ExecStart=$0 --sleep $v_sleep --guest-gpu-device $v_guest_gpu_device nvidia
+ExecStart=$0 --sleep $v_sleep --guest-gpu-device $v_guest_gpu_device --guest-gpu-bus-id $v_guest_gpu_bus_id nvidia
 
 StandardOutput=syslog
 StandardError=syslog
@@ -257,7 +257,7 @@ UNIT
 
 function decode_cmdline_args {
   local params
-  params=$(getopt --options hos:d:D --long help,other-target,sleep:,guest-gpu-device:,debug --name "$(basename "$0")" -- "$@")
+  params=$(getopt --options hos:d:b:D --long help,other-target,sleep:,guest-gpu-device:,guest-gpu-bus-id:,debug --name "$(basename "$0")" -- "$@")
 
   eval set -- "$params"
 
@@ -271,6 +271,9 @@ function decode_cmdline_args {
         shift 2 ;;
       -d|--guest-gpu-device)
         v_guest_gpu_device=$2
+        shift 2 ;;
+      -b|--guest-gpu-bus-id)
+        v_guest_gpu_bus_id=${2%.*}
         shift 2 ;;
       -D|--debug)
         v_debug=1
@@ -291,14 +294,14 @@ function decode_cmdline_args {
 
   case $v_mode in
   install)
-    if [[ -z $v_guest_gpu_device ]]; then
+    if [[ -z $v_guest_gpu_device || -z $v_guest_gpu_bus_id ]]; then
       echo "$c_help"
       exit 1
     fi
     v_sleep=${v_sleep:-$c_default_sleep}
     ;;
   switch_nvidia|switch_vfio|list)
-    if [[ -z $v_guest_gpu_device ]]; then
+    if [[ -z $v_guest_gpu_device || -z $v_guest_gpu_bus_id ]]; then
       echo "$c_help"
       exit 1
     fi
