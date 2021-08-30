@@ -198,7 +198,7 @@ function switch_nvidia {
     # as `other` user.
     #
     # If the cause if nvidia-persistenced, this can potentially cause a race condition; in such case,
-    # the only solution is probably to wait bit before restarsting persistenced, although this increases
+    # the only solution is probably to wait bit before restarting persistenced, although this increases
     # the window of opportunity for other programs to interfere.
     #
     systemctl stop nvidia-persistenced
