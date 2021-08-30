@@ -59,8 +59,59 @@ t_pstate=
 t_power_draw=          # int
 
 ################################################################################
+# COMMANDLINE DECODING
+################################################################################
+
+function decode_cmdline_args {
+  local params
+  params=$(getopt --options hos:D --long help,other-target,sleep:,debug --name "$(basename "$0")" -- "$@")
+
+  eval set -- "$params"
+
+  while true; do
+    case $1 in
+      -h|--help)
+        echo "$c_help"
+        exit 0 ;;
+      -s|--sleep)
+        v_sleep=$2
+        shift 2 ;;
+      -D|--debug)
+        v_debug=1
+        shift ;;
+      --)
+        shift
+        break ;;
+    esac
+  done
+
+  if [[ $# -ne 3 ]]; then
+    echo "$c_help"
+    exit 1
+  else
+    # The mode check is performed in main()
+    v_mode=$1
+    v_guest_gpu_device=$2
+    v_guest_gpu_bus_id=${3%.*}
+  fi
+
+  case $v_mode in
+  install)
+    v_sleep=${v_sleep:-$c_default_sleep}
+    ;;
+  esac
+}
+
+################################################################################
 # HELPERS
 ################################################################################
+
+function switch_to_root {
+  if [[ $(id -u) -ne 0 ]]; then
+    sudo "$0" "$@"
+    exit $?
+  fi
+}
 
 function list_gpu_device_processes {
   local device=$1
@@ -244,55 +295,8 @@ UNIT
 }
 
 ################################################################################
-# MAIN STAGES
+# MAIN
 ################################################################################
-
-function decode_cmdline_args {
-  local params
-  params=$(getopt --options hos:D --long help,other-target,sleep:,debug --name "$(basename "$0")" -- "$@")
-
-  eval set -- "$params"
-
-  while true; do
-    case $1 in
-      -h|--help)
-        echo "$c_help"
-        exit 0 ;;
-      -s|--sleep)
-        v_sleep=$2
-        shift 2 ;;
-      -D|--debug)
-        v_debug=1
-        shift ;;
-      --)
-        shift
-        break ;;
-    esac
-  done
-
-  if [[ $# -ne 3 ]]; then
-    echo "$c_help"
-    exit 1
-  else
-    # The mode check is performed in main()
-    v_mode=$1
-    v_guest_gpu_device=$2
-    v_guest_gpu_bus_id=${3%.*}
-  fi
-
-  case $v_mode in
-  install)
-    v_sleep=${v_sleep:-$c_default_sleep}
-    ;;
-  esac
-}
-
-function switch_to_root {
-  if [[ $(id -u) -ne 0 ]]; then
-    sudo "$0" "$@"
-    exit $?
-  fi
-}
 
 function main {
   case $v_mode in
