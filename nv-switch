@@ -28,7 +28,7 @@ c_attempts=4                       # Includes the first; a couple are generally 
 c_polling_interval=5               # Seconds between pollings
 c_default_sleep=5                  # Used by the service
 c_program_name=$(basename "$0")    # Also used as service name
-c_help="Usage: $c_program_name [-h|--help] [-d|--debug] [-s|--sleep SECS] $(IFS=\|; echo "${c_commands[*]}")
+c_help="Usage: $c_program_name [-h|--help] [-s|--sleep SECS] $(IFS=\|; echo "${c_commands[*]}")
 
 The '--sleep' option makes the program pause before and after running the 'nvidia' switch.
 
@@ -255,7 +255,7 @@ UNIT
 
 function decode_cmdline_args {
   local params
-  params=$(getopt --options hos:d --long help,other-target,sleep:,debug --name "$(basename "$0")" -- "$@")
+  params=$(getopt --options hos:D --long help,other-target,sleep:,debug --name "$(basename "$0")" -- "$@")
 
   eval set -- "$params"
 
@@ -267,7 +267,7 @@ function decode_cmdline_args {
       -s|--sleep)
         v_sleep=$2
         shift 2 ;;
-      -d|--debug)
+      -D|--debug)
         v_debug=1
         shift ;;
       --)
