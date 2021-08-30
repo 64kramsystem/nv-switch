@@ -54,12 +54,12 @@ Install the Systemd unit to run this program after X starts.
 
 If '--sleep' is not specified, the value is set to $c_default_sleep."
 
-v_mode=  # on/off/list
+v_mode=                # on/off/list
 v_sleep=
-v_debug= # boolean; blank=false, anything else=true
+v_debug=               # boolean; blank=false, anything else=true
 
 t_pstate=
-t_power_draw= # int
+t_power_draw=          # int
 
 ################################################################################
 # HELPERS
@@ -203,10 +203,6 @@ function switch_vfio {
 
   systemctl start nvidia-persistenced
 }
-
-################################################################################
-# OTHER ACTIONS
-################################################################################
 
 # The processlist is very important! See permissions not in switch_nvidia().
 #
