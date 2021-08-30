@@ -224,10 +224,6 @@ function list {
 # See note on switch_vfio() about lightdm restart side effect.
 #
 function install {
-  # `sleep` can be used as name, but best to avoid shadowing.
-  #
-  local l_sleep=${v_sleep:-$c_default_sleep}
-
   # For simplicity, a few assumptions are applied (standard home, no need to quote, ...).
   #
   SYSTEMD_EDITOR="tee" systemctl edit --force --full "$c_program_name" << UNIT
@@ -238,7 +234,7 @@ After=lightdm.target
 [Service]
 Type=oneshot
 # We need to wait a bit after start, otherwise, X hangs
-ExecStart=$0 nvidia -s $l_sleep
+ExecStart=$0 nvidia -s $v_sleep
 
 StandardOutput=syslog
 StandardError=syslog
@@ -250,7 +246,7 @@ WantedBy=multi-user.target
 UNIT
   systemctl enable "$c_program_name"
 
-  echo "Service installed and enabled, with a sleep time of $l_sleep"
+  echo "Service installed and enabled, with a sleep time of $v_sleep"
 }
 
 ################################################################################
@@ -287,6 +283,12 @@ function decode_cmdline_args {
     # Check is performed in main()
     v_mode=$1
   fi
+
+  case $v_mode in
+  install)
+    v_sleep=${v_sleep:-$c_default_sleep}
+    ;;
+  esac
 }
 
 function switch_to_root {
