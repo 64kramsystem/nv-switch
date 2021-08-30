@@ -8,14 +8,7 @@ shopt -s inherit_errexit
 
 c_commands=(nvidia vfio list)
 c_gpu_bus_id="0000:2b:00.0"
-# Components and drivers for an RTX 2070 Super
-#
-declare -A c_gpu_device_drivers=(
-  [$c_gpu_bus_id]=nvidia
-  [${c_gpu_bus_id%?}1]=snd_hda_intel
-  [${c_gpu_bus_id%?}2]=xhci_hcd
-  [${c_gpu_bus_id%?}3]=nvidia-gpu
-)
+c_gpu_device_drivers_rtx_2070_super=(nvidia snd_hda_intel xhci_hcd nvidia-gpu)
 # The pstate only is not sufficient, as in some cases, the temperature doesn't reach acceptable values
 # (eg. stays at 20W); it's currently not clear if in those cases, one should just wait more (e.g. 1
 # minute), or if a persistenced is really required.
@@ -139,10 +132,11 @@ function target_reached {
 ################################################################################
 
 function switch_nvidia {
-  for device in "${!c_gpu_device_drivers[@]}"; do
-    local driver=${c_gpu_device_drivers[$device]}
+  for (( i = 0; i < ${#c_gpu_device_drivers_rtx_2070_super[@]}; i++ )); do
+    local bus_id=${c_gpu_bus_id%?}.$i
+    local driver=${c_gpu_device_drivers_rtx_2070_super[$i]}
 
-    switch_driver "$device" "$driver"
+    switch_driver "$bus_id" "$driver"
   done
 
   local message
@@ -206,8 +200,9 @@ function switch_vfio {
 
   systemctl stop nvidia-persistenced
 
-  for device in "${!c_gpu_device_drivers[@]}"; do
-    switch_driver "$device" "vfio-pci"
+  for (( i = 0; i < ${#c_gpu_device_drivers_rtx_2070_super[@]}; i++ )); do
+    local bus_id=${c_gpu_bus_id%?}.$i
+    switch_driver "$bus_id" vfio-pci
   done
 
   # This has no access at this stage to the vfio card, so no need to set the permissions.
