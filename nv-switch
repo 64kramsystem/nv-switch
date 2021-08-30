@@ -1,16 +1,13 @@
 #!/bin/bash
-# shellcheck disable=SC2016 # single quote expansion
 set -o pipefail
 set -o errexit
 set -o nounset
 set -o errtrace
 shopt -s inherit_errexit
 
-c_gpu_device_drivers_rtx_2070_super=(nvidia snd_hda_intel xhci_hcd nvidia-gpu)
 # The pstate only is not sufficient, as in some cases, the temperature doesn't reach acceptable values
 # (eg. stays at 20W); it's currently not clear if in those cases, one should just wait more (e.g. 1
 # minute), or if a persistenced is really required.
-#
 c_target_pstate=P8
 c_target_power_draw=15             # Around 11 is optimal, but avoid trying hard (which sometimes just doesn't happen)
 c_persistenced_restart_interval=25 # Typically takes between 15 and 20"; 25 are enough to draw the conclusion
@@ -18,15 +15,22 @@ c_attempts=4                       # Includes the first; a couple are generally 
 c_polling_interval=5               # Seconds between pollings
 c_default_sleep=5                  # Used by the service
 c_program_name=$(basename "$0")    # Also used as service name
-c_help="Usage: $c_program_name [-h|--help] [-s|--sleep SECS] nvidia|vfio|list|install <guest_gpu_device> <guest_gpu_bus_id>
+c_config_file=/etc/$c_program_name # The format is described in decode_configuration_file()
+c_help="Usage: $c_program_name [-h|--help] [-s|--sleep SECS] nvidia|vfio|list|install [<argument>]
 
 Options:
 
-- '--sleep'          : make the program pause before and after running the 'nvidia' switch
-- 'guest_gpu_device' : block device, for example '/dev/nvidia1' or '/dev/dri/card0'
-- 'guest_gpu_bus_id' : bus (function is optional), for example '0000:2b:00' or '0000:2b:00.0'
+- '--sleep' : make the program pause before and after running the 'nvidia' switch
 
-Commands help follows.
+Arguments:
+
+- install <guest gpu device> <guest gpu bus id> : device bus id of the gpu, without the function (e.g. '/dev/nvidia1 0000:2d:00')
+
+No other commands use arguments
+
+All the commands (expect 'install') require the configuration file to be present.
+
+Commands help:
 
 ## nvidia
 
@@ -44,7 +48,9 @@ List the drives in use by the second card, and the processes running on it.
 
 ## install
 
-Install the Systemd unit to run this program after X starts.
+Install the Systemd unit to run this program after X starts, and create the configuration file ($c_config_file).
+
+This operation *must* be run while the nvidia drivers are loaded (so that the program can figure out the drivers).
 
 If '--sleep' is not specified, the value is set to $c_default_sleep."
 
@@ -53,6 +59,7 @@ v_sleep=
 v_debug=               # boolean; blank=false, anything else=true
 v_guest_gpu_device=    # block device, e.g. /dev/nvidia1
 v_guest_gpu_bus_id=    # bus without function, e.g. '0000:2b:00'
+v_guest_gpu_drivers=() # reflects the devices order in the bus
 
 t_pstate=
 t_power_draw=          # int
@@ -84,19 +91,20 @@ function decode_cmdline_args {
     esac
   done
 
-  if [[ $# -ne 3 ]]; then
-    echo "$c_help"
-    exit 1
-  else
-    # The mode check is performed in main()
-    v_mode=$1
-    v_guest_gpu_device=$2
-    v_guest_gpu_bus_id=${3%.*}
-  fi
+  # The mode check is performed in main()
+  #
+  v_mode=${1:-}
 
   case $v_mode in
   install)
+    check_args_count $# 3
+
+    v_guest_gpu_device=$2
+    v_guest_gpu_bus_id=$3
     v_sleep=${v_sleep:-$c_default_sleep}
+    ;;
+  *)
+    check_args_count $# 1
     ;;
   esac
 }
@@ -105,11 +113,33 @@ function decode_cmdline_args {
 # HELPERS
 ################################################################################
 
+function check_args_count {
+  local actual_count=$1
+  local expected_count=$2
+
+  if [[ $actual_count -ne $expected_count ]]; then
+    echo "$c_help"
+    exit 1
+  fi
+}
+
 function switch_to_root {
   if [[ $(id -u) -ne 0 ]]; then
     sudo "$0" "$@"
     exit $?
   fi
+}
+
+# The configuration file format is:
+#
+# - first line: guest GPU device
+# - second line: bus id (without function)
+# - third line: device drivers list (comma separated)
+#
+function decode_configuration_file {
+  v_guest_gpu_device=$(sed '1!d' "$c_config_file")
+  v_guest_gpu_bus_id=$(sed '2!d' "$c_config_file")
+  mapfile -td, v_guest_gpu_drivers < <(sed '3!d' "$c_config_file")
 }
 
 function list_gpu_device_processes {
@@ -148,12 +178,6 @@ function switch_driver {
   fi
 }
 
-function set_dev_permissions {
-  local permissions=$1
-
-  chmod "$permissions" "$v_guest_gpu_device"
-}
-
 function set_card_data {
   local raw_data
   raw_data=$(nvidia-smi -i "$v_guest_gpu_bus_id".0 --format=csv,noheader --query-gpu=pstate,power.draw)
@@ -175,9 +199,13 @@ function target_reached {
 ################################################################################
 
 function switch_nvidia {
-  for (( i = 0; i < ${#c_gpu_device_drivers_rtx_2070_super[@]}; i++ )); do
+  [[ -n $v_sleep ]] && sleep "$v_sleep"
+
+  decode_configuration_file
+
+  for (( i = 0; i < ${#v_guest_gpu_drivers[@]}; i++ )); do
     local bus_id=$v_guest_gpu_bus_id.$i
-    local driver=${c_gpu_device_drivers_rtx_2070_super[$i]}
+    local driver=${v_guest_gpu_drivers[$i]}
 
     switch_driver "$bus_id" "$driver"
   done
@@ -198,17 +226,18 @@ function switch_nvidia {
     # as `other` user.
     #
     # If the cause if nvidia-persistenced, this can potentially cause a race condition; in such case,
-    # the only solution is probably to wait bit before restarsting persistenced, although this increases
+    # the only solution is probably to wait bit before restarting persistenced, although this increases
     # the window of opportunity for other programs to interfere.
     #
     systemctl stop nvidia-persistenced
-    set_dev_permissions 666
+    chmod 666 "$v_guest_gpu_device"
+
     systemctl start nvidia-persistenced
 
     for ((SECONDS=0; SECONDS < c_persistenced_restart_interval; )); do
-      set_dev_permissions 666
+      chmod 666 "$v_guest_gpu_device"
       set_card_data
-      set_dev_permissions 664
+      chmod 664 "$v_guest_gpu_device"
 
       if target_reached; then
         message="State/Power draw reached ($t_pstate/$t_power_draw)!"
@@ -224,11 +253,15 @@ function switch_nvidia {
   message="Couldn't reach target state after $c_attempts attempts ($t_pstate/$t_power_draw)."
   >&2 echo "$message"
   notify-send "$message"
+
+  [[ -n $v_sleep ]] && sleep "$v_sleep"
 }
 
 # For a more sophisticated approach (using the same strategy), see https://raw.githubusercontent.com/andre-richter/vfio-pci-bind/master/vfio-pci-bind.sh.
 #
 function switch_vfio {
+  decode_configuration_file
+
   local guest_gpu_processes
   guest_gpu_processes=$(list_gpu_device_processes "$v_guest_gpu_device" | grep -v nvidia-persistenced || true)
 
@@ -243,7 +276,7 @@ function switch_vfio {
 
   systemctl stop nvidia-persistenced
 
-  for (( i = 0; i < ${#c_gpu_device_drivers_rtx_2070_super[@]}; i++ )); do
+  for (( i = 0; i < ${#v_guest_gpu_drivers[@]}; i++ )); do
     local bus_id=$v_guest_gpu_bus_id.$i
     switch_driver "$bus_id" vfio-pci
   done
@@ -256,6 +289,8 @@ function switch_vfio {
 # The processlist is very important! See permissions not in switch_nvidia().
 #
 function list {
+  decode_configuration_file
+
   local pattern=${v_guest_gpu_bus_id:5}
 
   lspci -v | grep -P '^\w\w:\w\w|in use' | perl -ne "if (/^$pattern/) { print; print scalar(readline) }"
@@ -268,6 +303,28 @@ function list {
 # See note on switch_vfio() about lightdm restart side effect.
 #
 function install {
+  echo "$v_guest_gpu_device" > "$c_config_file"
+  echo "$v_guest_gpu_bus_id" >> "$c_config_file"
+
+  local driver
+
+  for device_path in "/sys/bus/pci/devices/$v_guest_gpu_bus_id".*; do
+    if [[ $device_path != *.0 ]]; then
+      echo -n "," >> "$c_config_file"
+    fi
+
+    # We expect each device to be bound to a driver
+    #
+    driver=$(basename "$(readlink "$device_path"/driver)")
+
+    echo -n "$driver" >> "$c_config_file"
+  done
+
+  echo "Generated configuration:"
+  echo
+  cat "$c_config_file"
+  echo $'\n'
+
   # For simplicity, a few assumptions are applied (standard home, no need to quote, ...).
   #
   SYSTEMD_EDITOR="tee" systemctl edit --force --full "$c_program_name" << UNIT
@@ -302,9 +359,7 @@ function main {
   #
   case $v_mode in
   nvidia)
-    [[ -n $v_sleep ]] && sleep "$v_sleep"
     switch_nvidia
-    [[ -n $v_sleep ]] && sleep "$v_sleep"
     ;;
   vfio)
     switch_vfio
