@@ -157,7 +157,7 @@ function set_dev_permissions {
 
 function set_card_data {
   local raw_data
-  raw_data=$(nvidia-smi -i 1 --format=csv,noheader --query-gpu=pstate,power.draw)
+  raw_data=$(nvidia-smi -i "$v_guest_gpu_bus_id".0 --format=csv,noheader --query-gpu=pstate,power.draw)
 
   t_pstate=${raw_data%,*}
   t_power_draw=$(perl -ne "print /(\d+)\.\d+ W/" <<< "$raw_data")
