@@ -7,7 +7,6 @@ set -o errtrace
 shopt -s inherit_errexit
 
 c_commands=(nvidia vfio list)
-c_guest_gpu_device=/dev/nvidia1
 c_gpu_bus_id="0000:2b:00.0"
 # Components and drivers for an RTX 2070 Super
 #
@@ -28,9 +27,12 @@ c_attempts=4                       # Includes the first; a couple are generally 
 c_polling_interval=5               # Seconds between pollings
 c_default_sleep=5                  # Used by the service
 c_program_name=$(basename "$0")    # Also used as service name
-c_help="Usage: $c_program_name [-h|--help] [-s|--sleep SECS] $(IFS=\|; echo "${c_commands[*]}")
+c_help="Usage: $c_program_name [-h|--help] [-s|--sleep SECS] [-d|--guest-gpu-device] $(IFS=\|; echo "${c_commands[*]}")
 
-The '--sleep' option makes the program pause before and after running the 'nvidia' switch.
+Options:
+
+- '--sleep'            : make the program pause before and after running the 'nvidia' switch
+- '--guest-gpu-device' : block device, for example '/dev/nvidia1' or '/dev/dri/card0'
 
 Commands help follows.
 
@@ -38,25 +40,34 @@ Commands help follows.
 
 Switch the card drivers to nvidia.
 
+Requires '--guest-gpu-device'.
+
 Accepts '--sleep', but makes sense only in the context of a running Systemd unit.
 
 ## vfio
 
 Switch the card drivers to vfio.
 
+Requires '--guest-gpu-device'.
+
 ## list
 
 List the drives in use by the second card, and the processes running on it.
 
+Requires '--guest-gpu-device'.
+
 ## install
 
 Install the Systemd unit to run this program after X starts.
+
+Requires '--guest-gpu-device'.
 
 If '--sleep' is not specified, the value is set to $c_default_sleep."
 
 v_mode=                # on/off/list
 v_sleep=
 v_debug=               # boolean; blank=false, anything else=true
+v_guest_gpu_device=    # block device, e.g. /dev/nvidia1
 
 t_pstate=
 t_power_draw=          # int
@@ -104,7 +115,7 @@ function switch_driver {
 function set_dev_permissions {
   local permissions=$1
 
-  chmod "$permissions" "$c_guest_gpu_device"
+  chmod "$permissions" "$v_guest_gpu_device"
 }
 
 function set_card_data {
@@ -182,7 +193,7 @@ function switch_nvidia {
 #
 function switch_vfio {
   local guest_gpu_processes
-  guest_gpu_processes=$(list_gpu_device_processes "$c_guest_gpu_device" | grep -v nvidia-persistenced || true)
+  guest_gpu_processes=$(list_gpu_device_processes "$v_guest_gpu_device" | grep -v nvidia-persistenced || true)
 
   # This can actually happen if the nvidia driver if one restarts X. In order to avoid that, a switch
   # to vfio service should be run on lightdm shutdown.
@@ -214,7 +225,7 @@ function list {
 
   echo
 
-  list_gpu_device_processes "$c_guest_gpu_device" | awk '{print $NF,$0}' | sort | cut -f2- -d' '
+  list_gpu_device_processes "$v_guest_gpu_device" | awk '{print $NF,$0}' | sort | cut -f2- -d' '
 }
 
 # See note on switch_vfio() about lightdm restart side effect.
@@ -230,7 +241,7 @@ After=lightdm.target
 [Service]
 Type=oneshot
 # We need to wait a bit after start, otherwise, X hangs
-ExecStart=$0 nvidia -s $v_sleep
+ExecStart=$0 --sleep $v_sleep --guest-gpu-device $v_guest_gpu_device nvidia
 
 StandardOutput=syslog
 StandardError=syslog
@@ -251,7 +262,7 @@ UNIT
 
 function decode_cmdline_args {
   local params
-  params=$(getopt --options hos:D --long help,other-target,sleep:,debug --name "$(basename "$0")" -- "$@")
+  params=$(getopt --options hos:d:D --long help,other-target,sleep:,guest-gpu-device:,debug --name "$(basename "$0")" -- "$@")
 
   eval set -- "$params"
 
@@ -262,6 +273,9 @@ function decode_cmdline_args {
         exit 0 ;;
       -s|--sleep)
         v_sleep=$2
+        shift 2 ;;
+      -d|--guest-gpu-device)
+        v_guest_gpu_device=$2
         shift 2 ;;
       -D|--debug)
         v_debug=1
@@ -282,7 +296,17 @@ function decode_cmdline_args {
 
   case $v_mode in
   install)
+    if [[ -z $v_guest_gpu_device ]]; then
+      echo "$c_help"
+      exit 1
+    fi
     v_sleep=${v_sleep:-$c_default_sleep}
+    ;;
+  switch_nvidia|switch_vfio|list)
+    if [[ -z $v_guest_gpu_device ]]; then
+      echo "$c_help"
+      exit 1
+    fi
     ;;
   esac
 }
