@@ -6,7 +6,6 @@ set -o nounset
 set -o errtrace
 shopt -s inherit_errexit
 
-c_commands=(nvidia vfio list)
 c_gpu_device_drivers_rtx_2070_super=(nvidia snd_hda_intel xhci_hcd nvidia-gpu)
 # The pstate only is not sufficient, as in some cases, the temperature doesn't reach acceptable values
 # (eg. stays at 20W); it's currently not clear if in those cases, one should just wait more (e.g. 1
@@ -19,7 +18,7 @@ c_attempts=4                       # Includes the first; a couple are generally 
 c_polling_interval=5               # Seconds between pollings
 c_default_sleep=5                  # Used by the service
 c_program_name=$(basename "$0")    # Also used as service name
-c_help="Usage: $c_program_name [-h|--help] [-s|--sleep SECS] $(IFS=\|; echo "${c_commands[*]}") <guest_gpu_device> <guest_gpu_bus_id>
+c_help="Usage: $c_program_name [-h|--help] [-s|--sleep SECS] nvidia|vfio|list|install <guest_gpu_device> <guest_gpu_bus_id>
 
 Options:
 
@@ -299,6 +298,8 @@ UNIT
 ################################################################################
 
 function main {
+  # When adding a new command, update the help!
+  #
   case $v_mode in
   nvidia)
     [[ -n $v_sleep ]] && sleep "$v_sleep"
