@@ -33,14 +33,27 @@ c_help="Usage: $c_program_name [-h|--help] [-d|--debug] [-s|--sleep SECS] $(IFS=
 
 The '--sleep' option makes the program pause before and after running the 'nvidia' switch.
 
-COMMANDS (with command-specific options):
+Commands help follows.
 
-- 'nvidia'  : switch the drivers to nvidia
-  - accepts '--sleep', but makes sense only in the context of a running Systemd unit
-- 'vfio'    : switch the drivers to vfio
-- 'list'    : list the drives in use by the second GPUS, and the process running on it
-- 'install' : install the Systemd unit
-  - if '--sleep' is not specified, the value is set to $c_default_sleep."
+## nvidia
+
+Switch the card drivers to nvidia.
+
+Accepts '--sleep', but makes sense only in the context of a running Systemd unit.
+
+## vfio
+
+Switch the card drivers to vfio.
+
+## list
+
+List the drives in use by the second card, and the processes running on it.
+
+## install
+
+Install the Systemd unit to run this program after X starts.
+
+If '--sleep' is not specified, the value is set to $c_default_sleep."
 
 v_mode=  # on/off/list
 v_sleep=
