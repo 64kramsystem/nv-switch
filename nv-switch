@@ -148,12 +148,6 @@ function switch_driver {
   fi
 }
 
-function set_dev_permissions {
-  local permissions=$1
-
-  chmod "$permissions" "$v_guest_gpu_device"
-}
-
 function set_card_data {
   local raw_data
   raw_data=$(nvidia-smi -i "$v_guest_gpu_bus_id".0 --format=csv,noheader --query-gpu=pstate,power.draw)
@@ -202,13 +196,14 @@ function switch_nvidia {
     # the window of opportunity for other programs to interfere.
     #
     systemctl stop nvidia-persistenced
-    set_dev_permissions 666
+    chmod 666 "$v_guest_gpu_device"
+
     systemctl start nvidia-persistenced
 
     for ((SECONDS=0; SECONDS < c_persistenced_restart_interval; )); do
-      set_dev_permissions 666
+      chmod 666 "$v_guest_gpu_device"
       set_card_data
-      set_dev_permissions 664
+      chmod 664 "$v_guest_gpu_device"
 
       if target_reached; then
         message="State/Power draw reached ($t_pstate/$t_power_draw)!"
