@@ -1,5 +1,4 @@
 #!/bin/bash
-# shellcheck disable=SC2016 # single quote expansion
 set -o pipefail
 set -o errexit
 set -o nounset
