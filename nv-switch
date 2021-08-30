@@ -7,7 +7,6 @@ set -o errtrace
 shopt -s inherit_errexit
 
 c_commands=(nvidia vfio list)
-c_host_gpu_device=/dev/nvidia0
 c_guest_gpu_device=/dev/nvidia1
 c_gpu_bus_id="0000:2b:00.0"
 # Components and drivers for an RTX 2070 Super
@@ -219,10 +218,7 @@ function list {
 
   echo
 
-  (
-    list_gpu_device_processes "$c_host_gpu_device"
-    list_gpu_device_processes "$c_guest_gpu_device"
-  ) | awk '{print $NF,$0}' | sort | cut -f2- -d' '
+  list_gpu_device_processes "$c_guest_gpu_device" | awk '{print $NF,$0}' | sort | cut -f2- -d' '
 }
 
 # See note on switch_vfio() about lightdm restart side effect.
